@@ -124,6 +124,39 @@ void benchmark_mpmc(const char* name, std::size_t per_producer) {
     print_result(name, total, clock_type::now() - start);
 }
 
+template <class Buffer>
+void benchmark_triple_buffer(const char* name, std::size_t count) {
+    Buffer buffer;
+    std::atomic<bool> writer_done{false};
+    std::atomic<std::size_t> observed{0};
+    const auto start = clock_type::now();
+
+    std::jthread writer([&] {
+        for (std::size_t value = 1; value <= count; ++value) {
+            buffer.producer_buffer() = value;
+            buffer.publish();
+        }
+        writer_done.store(true, std::memory_order_release);
+    });
+
+    std::jthread reader([&] {
+        std::size_t last = 0;
+        while (!writer_done.load(std::memory_order_acquire) || last < count) {
+            const auto current = buffer.consume_latest();
+            if (current > last) {
+                last = current;
+                observed.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    writer.join();
+    reader.join();
+    print_result(name, count, clock_type::now() - start);
+    std::cout << "  reader observed " << observed.load(std::memory_order_relaxed)
+              << " distinct publications; dropped intermediate values are expected\n";
+}
+
 } // namespace
 
 int main() {
@@ -145,7 +178,9 @@ int main() {
         std::cout << "SKIP aztl MPMC ring: implementation pending\n";
     }
 
-    if constexpr (!aztl::triple_buffer<std::size_t>::implemented) {
+    if constexpr (aztl::triple_buffer<std::size_t>::implemented) {
+        benchmark_triple_buffer<aztl::triple_buffer<std::size_t>>("aztl triple buffer", count);
+    } else {
         std::cout << "SKIP aztl triple buffer: implementation pending\n";
     }
 }
