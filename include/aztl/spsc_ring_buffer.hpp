@@ -6,8 +6,8 @@
 #include <atomic>
 #include <array>
 #include <algorithm>
-//#include <iostream>
 #include <memory>
+#include <concepts>
 
 namespace aztl {
 
@@ -34,17 +34,27 @@ public:
     [[nodiscard]] constexpr std::size_t capacity() const noexcept { return Capacity; }
 
     [[nodiscard]] bool try_push(const T& t) {
-        return try_push_impl(t);
+        return try_emplace(t);
     }
 
     [[nodiscard]] bool try_push(T&& t) {
-        return try_push_impl(std::move(t));
+        return try_emplace(std::move(t));
     }
 
     template <class... Args>
-    [[nodiscard]] bool try_emplace(Args&&...) {
-        // TODO: construct directly in unoccupied ring storage.
-        return false;
+    requires std::constructible_from<T, Args...>
+    [[nodiscard]] bool try_emplace(Args&&... args) {
+        auto head = _head.load(std::memory_order_relaxed);
+        auto tail = _tail.load(std::memory_order_acquire);
+        if (head - tail == Capacity) {
+            // full
+            return false;
+        }
+        const auto index = head % Capacity;
+        T* ptr = slot2ptr(index);
+        std::construct_at(ptr, std::forward<Args>(args)...);
+        _head.store(head + 1, std::memory_order_release);
+        return true;
     }
 
     [[nodiscard]] std::optional<T> try_pop() {
@@ -56,7 +66,7 @@ public:
         }
         auto index = tail % Capacity;
         T* ptr = slot2ptr(index);
-        T value = *ptr;
+        T value = std::move(*ptr);
         std::destroy_at(ptr);
         _tail.store(tail + 1, std::memory_order_release);
         return value;        
@@ -71,7 +81,7 @@ public:
     [[nodiscard]] size_t count() const noexcept {
         auto head = _head.load(std::memory_order_relaxed);
         auto tail = _tail.load(std::memory_order_relaxed);
-        return (head - tail == Capacity);
+        return head - tail;
     }
 
     std::array<slot<T>, Capacity>& get_buffer() {
@@ -84,20 +94,6 @@ private:
     std::atomic<size_t> _tail = {0};
 
     T* slot2ptr(std::size_t i) {return std::launder(reinterpret_cast<T*>(_buffer[i].storage));}
-
-    template <typename U> bool try_push_impl(U&& value) {
-        auto head = _head.load(std::memory_order_relaxed);
-        auto tail = _tail.load(std::memory_order_acquire);
-        if (head - tail == Capacity) {
-            // full
-            return false;
-        }
-        auto index = head % Capacity;
-        T* ptr = slot2ptr(index);
-        std::construct_at(ptr, std::forward<U>(value));
-        _head.store(head + 1, std::memory_order_release);
-        return true;
-    }
 };
 
 } // namespace aztl

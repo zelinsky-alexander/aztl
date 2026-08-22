@@ -27,13 +27,31 @@ void check(bool condition, const char* expression, const char* test) {
 
 #define AZTL_CHECK(expr) check(static_cast<bool>(expr), #expr, __func__)
 
+struct test_value {
+    int id;
+    std::string name;
+
+    test_value(int i, std::string n)
+        : id(i), name(std::move(n)) {}
+};
+
+void test_spsc_emplace() {
+    aztl::spsc_ring_buffer<test_value, 4> q;
+
+    AZTL_CHECK(q.try_emplace(7, "alpha"));
+
+    auto value = q.try_pop();
+
+    AZTL_CHECK(value.has_value());
+    AZTL_CHECK(value->id == 7);
+    AZTL_CHECK(value->name == "alpha");
+}
+
 template <class Queue>
 void test_basic_fifo() {
 
     std::cout << "Start test_basic_fifo" << std::endl;
-
     Queue q;
-    
     AZTL_CHECK(q.capacity() == 8);
     AZTL_CHECK(q.try_push(10));
     AZTL_CHECK(q.try_push(20));
@@ -171,12 +189,36 @@ void test_triple_buffer_latest_value() {
     AZTL_CHECK(buffer.consume_latest() == 13);
 }
 
+void test_spsc_emplace_full() {
+    aztl::spsc_ring_buffer<int, 2> q;
+
+    AZTL_CHECK(q.try_emplace(1));
+    AZTL_CHECK(q.try_emplace(2));
+    AZTL_CHECK(!q.try_emplace(3));
+
+    AZTL_CHECK(q.count() == 2);
+}
+
+void test_spsc_emplace_move_only() {
+    aztl::spsc_ring_buffer<std::unique_ptr<int>, 2> q;
+
+    AZTL_CHECK(q.try_emplace(std::make_unique<int>(42)));
+
+    auto value = q.try_pop();
+
+    AZTL_CHECK(value);
+    AZTL_CHECK(**value == 42);
+}
+
 } // namespace
 
 int main() {
     if constexpr (aztl::spsc_ring_buffer<int, 8>::implemented) {
         test_basic_fifo<aztl::spsc_ring_buffer<int, 8>>();
         test_spsc_concurrent_order();
+        test_spsc_emplace_full();
+        test_spsc_emplace_move_only();
+        test_spsc_emplace();
     } else {
         std::cout << "SKIP SPSC correctness tests: implementation pending\n";
     }
