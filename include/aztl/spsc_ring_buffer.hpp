@@ -29,7 +29,15 @@ public:
     spsc_ring_buffer(const spsc_ring_buffer&) = delete;
     spsc_ring_buffer& operator=(const spsc_ring_buffer&) = delete;
     spsc_ring_buffer(spsc_ring_buffer&&) = delete;
-    spsc_ring_buffer&& operator=(spsc_ring_buffer&&) = delete;
+    spsc_ring_buffer& operator=(spsc_ring_buffer&&) = delete;
+
+    ~spsc_ring_buffer() {
+        auto head = _head.load(std::memory_order_relaxed);
+        auto tail = _tail.load(std::memory_order_relaxed);
+        for (auto i = tail; i != head; ++i) {
+            std::destroy_at(slot2ptr(i % Capacity));
+        }
+    }
 
     [[nodiscard]] constexpr std::size_t capacity() const noexcept { return Capacity; }
 
@@ -84,9 +92,6 @@ public:
         return head - tail;
     }
 
-    std::array<slot<T>, Capacity>& get_buffer() {
-        return _buffer;
-    }
 
 private:
     std::array<slot<T>, Capacity> _buffer;
