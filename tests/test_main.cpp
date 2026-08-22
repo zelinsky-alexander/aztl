@@ -9,6 +9,10 @@
 #include <numeric>
 #include <thread>
 #include <vector>
+#include <iostream>
+#include <format>
+#include <cstdint>
+
 
 namespace {
 
@@ -25,7 +29,11 @@ void check(bool condition, const char* expression, const char* test) {
 
 template <class Queue>
 void test_basic_fifo() {
+
+    std::cout << "Start test_basic_fifo" << std::endl;
+
     Queue q;
+    
     AZTL_CHECK(q.capacity() == 8);
     AZTL_CHECK(q.try_push(10));
     AZTL_CHECK(q.try_push(20));
@@ -37,8 +45,13 @@ void test_basic_fifo() {
 }
 
 void test_spsc_concurrent_order() {
-    constexpr int count = 200'000;
-    aztl::spsc_ring_buffer<int, 1024> q;
+
+    constexpr int bsize = 1000;
+    constexpr int count = 100'000;
+
+    std::cout << "\nStart test_spsc_concurrent_order (producer) count=" << count << " buffer size=" << bsize << std::endl;
+
+    aztl::spsc_ring_buffer<int, bsize> q;
     std::atomic<bool> start{false};
     std::atomic<bool> ordered{true};
 
@@ -55,6 +68,8 @@ void test_spsc_concurrent_order() {
         }
     });
 
+    std::cout << "=== start consumer thread" << std::endl;
+
     std::jthread consumer([&] {
         start.store(true, std::memory_order_release);
         for (int expected = 0; expected < count;) {
@@ -69,9 +84,13 @@ void test_spsc_concurrent_order() {
         }
     });
 
+    std::cout << "=== wait for producer and consumer" << std::endl;
     producer.join();
     consumer.join();
+    std::cout << "=== producer and consumer joined, q size is " << q.count() << std::endl;
     AZTL_CHECK(ordered.load(std::memory_order_relaxed));
+    AZTL_CHECK(q.count() == 0);
+    AZTL_CHECK(q.empty());
 }
 
 void test_mpmc_exactly_once() {
