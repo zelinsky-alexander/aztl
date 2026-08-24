@@ -26,6 +26,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
+// Build and test with gcc 14
+CXX=g++-14 cmake -S . -B build-gcc14
+cmake --build build-gcc14 -j
+ ./build-gcc14/tests/aztl_tests
+
 
 The scaffold keeps implementation-dependent correctness suites skipped until each primitive's `implemented` flag is set to `true`. Once you implement a primitive, flip that flag and the relevant tests become active.
 
